@@ -7,10 +7,19 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependency directories
 node_modules
+
+# Build output
 dist
 dist-ssr
-*.local
+build
+out
+
+# Local environment files
+.env
+.env.local
+.env.*.local
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +31,20 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Cache & Coverage
+.cache
+.terraform
+.next
+.nuxt
+coverage
+*.tsbuildinfo
+
+# Misc
+*.local
+*.lock-wscript
+
+# OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
