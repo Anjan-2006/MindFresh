@@ -1,586 +1,268 @@
-import { useState, useEffect } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import Header from "@/components/Header";
-import {
-  BarChart3,
-  TrendingUp,
-  Calendar,
-  Heart,
-  Brain,
-  Target,
-} from "lucide-react";
-import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Link, useNavigate } from "react-router-dom";
+import { User, Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "@/hooks/use-toast";
 
-const Progress = () => {
-  const { user } = useAuth();
-  const [moodData, setMoodData] = useState<any[]>([]);
-  const [weeklyStats, setWeeklyStats] = useState<any[]>([]);
-  const [emotionData, setEmotionData] = useState<any[]>([]);
-  const [currentStreak, setCurrentStreak] = useState(0);
-  const [averageMood, setAverageMood] = useState(0);
-  const [journalEntries, setJournalEntries] = useState(0);
-  const [wellnessScore, setWellnessScore] = useState(0);
-  const [insights, setInsights] = useState<any[]>([]);
-  const [achievements, setAchievements] = useState<any[]>([]);
+const Signup = () => {
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [formData, setFormData] = useState({
+    fullName: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    termsAccepted: false
+  });
+  const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
 
-  const fetchProgressData = async () => {
-    if (!user) return;
-
-    try {
-      // Fetch mood data for the past week
-      const weekStart = new Date();
-      weekStart.setDate(weekStart.getDate() - 7);
-
-      const { data: weeklyMoods } = await supabase
-        .from("moodTable")
-        .select("mood_value, created_at")
-        .eq("user_id", user.id)
-        .gte("created_at", weekStart.toISOString())
-        .order("created_at", { ascending: true });
-
-      if (weeklyMoods) {
-        const moodsByDay = weeklyMoods.reduce((acc: any, entry: any) => {
-          const date = new Date(entry.created_at);
-          const dayName = date.toLocaleDateString("en-US", {
-            weekday: "short",
-          });
-          const dateStr = date.toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-          });
-
-          if (!acc[dayName]) {
-            acc[dayName] = { day: dayName, date: dateStr, moods: [] };
-          }
-          acc[dayName].moods.push(entry.mood_value);
-          return acc;
-        }, {});
-
-        const chartData = Object.values(moodsByDay).map((day: any) => ({
-          ...day,
-          mood:
-            day.moods.reduce((sum: number, mood: number) => sum + mood, 0) /
-            day.moods.length,
-        }));
-
-        setMoodData(chartData);
-      }
-
-      // Fetch monthly data for this month
-      const monthStart = new Date();
-      monthStart.setDate(1);
-      monthStart.setHours(0, 0, 0, 0);
-
-      const { data: monthlyJournals } = await supabase
-        .from("journaltable")
-        .select("id, created_at")
-        .eq("user_id", user.id)
-        .gte("created_at", monthStart.toISOString());
-
-      const { data: monthlyMoods } = await supabase
-        .from("moodTable")
-        .select("mood_value, created_at")
-        .eq("user_id", user.id)
-        .gte("created_at", monthStart.toISOString());
-
-      const { data: monthlyMeditation } = await supabase
-        .from("meditationtime")
-        .select("session_duration, created_at")
-        .eq("user_id", user.id)
-        .gte("created_at", monthStart.toISOString());
-
-      // Calculate statistics
-      setJournalEntries(monthlyJournals?.length || 0);
-
-      if (monthlyMoods && monthlyMoods.length > 0) {
-        const avg =
-          monthlyMoods.reduce((sum, entry) => sum + entry.mood_value, 0) /
-          monthlyMoods.length;
-        setAverageMood(Number(avg.toFixed(1)));
-      }
-
-      if (monthlyMoods) {
-        calculateEmotionData(monthlyMoods);
-      }
-
-      // Calculate wellness score (combination of activities)
-      const journalScore = Math.min((monthlyJournals?.length || 0) * 2, 40);
-      const moodScore = averageMood * 4 || 0;
-      const meditationScore = Math.min(
-        ((monthlyMeditation?.reduce(
-          (sum, session) => sum + session.session_duration,
-          0
-        ) || 0) /
-          60) *
-          2,
-        20
-      );
-      setWellnessScore(Math.round(journalScore + moodScore + meditationScore));
-
-      // Generate insights based on real data
-      const generatedInsights = [
-        {
-          icon: TrendingUp,
-          title: "Mood Trend",
-          description:
-            monthlyMoods && monthlyMoods.length > 0
-              ? `Your average mood this month is ${(
-                  monthlyMoods.reduce(
-                    (sum, entry) => sum + entry.mood_value,
-                    0
-                  ) / monthlyMoods.length
-                ).toFixed(1)}/10`
-              : "Start tracking your mood to see trends",
-          status: "positive",
-        },
-        {
-          icon: Brain,
-          title: "Journal Activity",
-          description: `You've written ${
-            monthlyJournals?.length || 0
-          } journal entries this month`,
-          status: "positive",
-        },
-        {
-          icon: Target,
-          title: "Meditation Progress",
-          description: `${Math.floor(
-            (monthlyMeditation?.reduce(
-              (sum, session) => sum + session.session_duration,
-              0
-            ) || 0) / 60
-          )} minutes of meditation this month`,
-          status: "neutral",
-        },
-      ];
-      setInsights(generatedInsights);
-
-      // Generate achievements based on real data
-      const generatedAchievements = [
-        {
-          title: "First Entry",
-          description: "Made your first mood or journal entry",
-          earned:
-            (monthlyJournals && monthlyJournals.length > 0) ||
-            (monthlyMoods && monthlyMoods.length > 0),
-        },
-        {
-          title: "Journal Habit",
-          description: "Wrote 5 journal entries",
-          earned: (monthlyJournals?.length || 0) >= 5,
-        },
-        {
-          title: "Meditation Master",
-          description: "Completed 30 minutes of breathing exercises",
-          earned:
-            (monthlyMeditation?.reduce(
-              (sum, session) => sum + session.session_duration,
-              0
-            ) || 0) /
-              60 >=
-            30,
-        },
-        {
-          title: "Mood Tracker",
-          description: "Tracked your mood 10 times",
-          earned: (monthlyMoods?.length || 0) >= 10,
-        },
-      ];
-      setAchievements(generatedAchievements);
-
-      // Generate weekly stats for the past 4 weeks
-      const stats = [];
-      for (let i = 3; i >= 0; i--) {
-        const weekStart = new Date();
-        weekStart.setDate(weekStart.getDate() - (i * 7 + 7));
-        const weekEnd = new Date();
-        weekEnd.setDate(weekEnd.getDate() - i * 7);
-
-        const { data: weekJournals } = await supabase
-          .from("journaltable")
-          .select("id")
-          .eq("user_id", user.id)
-          .gte("created_at", weekStart.toISOString())
-          .lt("created_at", weekEnd.toISOString());
-
-        const { data: weekMoods } = await supabase
-          .from("moodTable")
-          .select("mood_value")
-          .eq("user_id", user.id)
-          .gte("created_at", weekStart.toISOString())
-          .lt("created_at", weekEnd.toISOString());
-
-        const { data: weekMeditation } = await supabase
-          .from("meditationtime")
-          .select("session_duration")
-          .eq("user_id", user.id)
-          .gte("created_at", weekStart.toISOString())
-          .lt("created_at", weekEnd.toISOString());
-
-        stats.push({
-          week: `Week ${4 - i}`,
-          journalEntries: weekJournals?.length || 0,
-          moodAvg:
-            weekMoods && weekMoods.length > 0
-              ? Number(
-                  (
-                    weekMoods.reduce(
-                      (sum, entry) => sum + entry.mood_value,
-                      0
-                    ) / weekMoods.length
-                  ).toFixed(1)
-                )
-              : 0,
-          meditation: Math.floor(
-            (weekMeditation?.reduce(
-              (sum, session) => sum + session.session_duration,
-              0
-            ) || 0) / 60
-          ),
-        });
-      }
-      setWeeklyStats(stats);
-    } catch (error) {
-      console.error("Failed to fetch progress data:", error);
-    }
+  const handleInputChange = (field: string, value: string | boolean) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const calculateEmotionData = (monthlyMoods: any[]) => {
-    if (!monthlyMoods || monthlyMoods.length === 0) {
-      setEmotionData([]);
+  const handleSignup = async () => {
+    if (!formData.email || !formData.password || !formData.fullName) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields",
+        variant: "destructive"
+      });
       return;
     }
 
-    // Example logic: map mood values (1–10) to emotions
-    const emotionCategories = {
-      Happy: (value: number) => value >= 7,
-      Neutral: (value: number) => value >= 4 && value < 7,
-      Sad: (value: number) => value < 4,
-    };
+    if (formData.password !== formData.confirmPassword) {
+      toast({
+        title: "Error", 
+        description: "Passwords do not match",
+        variant: "destructive"
+      });
+      return;
+    }
 
-    const counts: Record<string, number> = { Happy: 0, Neutral: 0, Sad: 0 };
+    if (!formData.termsAccepted) {
+      toast({
+        title: "Error",
+        description: "Please accept the terms and conditions",
+        variant: "destructive"
+      });
+      return;
+    }
 
-    monthlyMoods.forEach((entry) => {
-      for (const [emotion, condition] of Object.entries(emotionCategories)) {
-        if (condition(entry.mood_value)) {
-          counts[emotion]++;
+    setIsLoading(true);
+
+    try {
+      const { error } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/`,
+          data: {
+            full_name: formData.fullName
+          }
         }
+      });
+
+      if (error) {
+        toast({
+          title: "Error",
+          description: error.message,
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Check your email!",
+          description: "We've sent you a confirmation link to complete your registration.",
+          duration: 5000
+        });
+        
+        setTimeout(() => {
+          navigate("/");
+        }, 2000);
       }
-    });
-
-    const total = monthlyMoods.length;
-    const formatted = Object.entries(counts).map(([name, count], idx) => ({
-      name,
-      value: Math.round((count / total) * 100), // percentage
-      color: ["#34d399", "#60a5fa", "#f87171"][idx], // green, blue, red
-    }));
-
-    setEmotionData(formatted);
+    } catch (error) {
+      toast({
+        title: "Error", 
+        description: "Something went wrong. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  useEffect(() => {
-    if (user) {
-      fetchProgressData();
-    }
-  }, [user]);
-
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold mb-2">
-            Your <span className="text-gradient">Progress Journey</span>
-          </h1>
-          <p className="text-lg text-muted-foreground">
-            Track your wellness journey and celebrate your growth
-          </p>
+    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-accent/5 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <Link to="/" className="inline-flex items-center space-x-2">
+            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
+              <span className="text-primary-foreground font-bold text-xl">M</span>
+            </div>
+            <span className="text-2xl font-semibold text-foreground">MindFresh</span>
+          </Link>
         </div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card className="wellness-card">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    Current Streak
-                  </p>
-                  <p className="text-3xl font-bold text-primary">
-                    {currentStreak}
-                  </p>
-                  <p className="text-sm">Days active</p>
-                </div>
-                <Calendar className="h-8 w-8 text-primary" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="wellness-card">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Average Mood</p>
-                  <p className="text-3xl font-bold text-wellness-green">
-                    {averageMood || "0"}
-                  </p>
-                  <p className="text-sm">This month</p>
-                </div>
-                <Heart className="h-8 w-8 text-wellness-green" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="wellness-card">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    Journal Entries
-                  </p>
-                  <p className="text-3xl font-bold text-wellness-blue">
-                    {journalEntries}
-                  </p>
-                  <p className="text-sm">This month</p>
-                </div>
-                <Brain className="h-8 w-8 text-wellness-blue" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="wellness-card">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    Wellness Score
-                  </p>
-                  <p className="text-3xl font-bold text-wellness-purple">
-                    {wellnessScore}
-                  </p>
-                  <p className="text-sm">Out of 100</p>
-                </div>
-                <BarChart3 className="h-8 w-8 text-wellness-purple" />
-              </div>
-            </CardContent>
-          </Card>
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-foreground mb-2">Start Your Journey</h1>
+          <p className="text-muted-foreground">Create your free account to begin</p>
         </div>
 
-        {/* Charts Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Mood Trend Chart */}
-          <Card className="wellness-card">
-            <CardHeader>
-              <CardTitle>Weekly Mood Trend</CardTitle>
-              <CardDescription>
-                Your mood patterns over the past week
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={moodData}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                  <XAxis dataKey="day" />
-                  <YAxis domain={[1, 10]} />
-                  <Tooltip
-                    formatter={(value) => [`${value}/10`, "Mood"]}
-                    labelFormatter={(label) => {
-                      const item = moodData.find((d) => d.day === label);
-                      return item ? `${item.day}, ${item.date}` : label;
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="mood"
-                    stroke="hsl(170 77% 36%)"
-                    strokeWidth={3}
-                    dot={{ fill: "hsl(170 77% 36%)", strokeWidth: 2, r: 5 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* Emotion Distribution */}
-          <Card className="wellness-card">
-            <CardHeader>
-              <CardTitle>Emotion Distribution</CardTitle>
-              <CardDescription>
-                How you've been feeling this month
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={emotionData}
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={80}
-                    dataKey="value"
-                    label={({ name, value }) => `${name} ${value}%`}
-                  >
-                    {emotionData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => [`${value}%`, "Percentage"]} />
-                </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Weekly Activity Chart */}
-        <Card className="wellness-card mb-8">
+        <Card className="border-accent/20 shadow-lg">
           <CardHeader>
-            <CardTitle>Monthly Activity Overview</CardTitle>
-            <CardDescription>
-              Your wellness activities across the past 4 weeks
-            </CardDescription>
+            <CardTitle className="text-center">Create Account</CardTitle>
+            <p className="text-center text-sm text-muted-foreground">
+              Join thousands on their wellness journey
+            </p>
           </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={weeklyStats}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                <XAxis dataKey="week" />
-                <YAxis />
-                <Tooltip />
-                <Bar
-                  dataKey="journalEntries"
-                  fill="hsl(142 76% 48%)"
-                  name="Journal Entries"
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="fullName">Full Name</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="fullName"
+                  value={formData.fullName}
+                  onChange={(e) => handleInputChange("fullName", e.target.value)}
+                  placeholder="Enter your full name"
+                  className="pl-10"
                 />
-                <Bar
-                  dataKey="meditation"
-                  fill="hsl(200 98% 65%)"
-                  name="Meditation (minutes)"
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => handleInputChange("email", e.target.value)}
+                  placeholder="Enter your email"
+                  className="pl-10"
                 />
-              </BarChart>
-            </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={formData.password}
+                  onChange={(e) => handleInputChange("password", e.target.value)}
+                  placeholder="Create a password"
+                  className="pl-10 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={formData.confirmPassword}
+                  onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
+                  placeholder="Confirm your password"
+                  className="pl-10 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="terms" 
+                checked={formData.termsAccepted}
+                onCheckedChange={(checked) => handleInputChange("termsAccepted", checked)}
+              />
+              <Label htmlFor="terms" className="text-sm">
+                I agree to the{" "}
+                <Link to="/terms" className="text-primary hover:underline">
+                  Terms of Service
+                </Link>{" "}
+                and{" "}
+                <Link to="/privacy" className="text-primary hover:underline">
+                  Privacy Policy
+                </Link>
+              </Label>
+            </div>
+
+            <Button 
+              className="w-full" 
+              onClick={handleSignup}
+              disabled={isLoading}
+            >
+              {isLoading ? "Creating Account..." : "Create Account"}
+            </Button>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
+              </div>
+            </div>
+
+            <Button variant="outline" className="w-full">
+              <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
+                <path
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  fill="#4285F4"
+                />
+                <path
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  fill="#34A853"
+                />
+                <path
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                  fill="#FBBC05"
+                />
+                <path
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  fill="#EA4335"
+                />
+              </svg>
+              Continue with Google
+            </Button>
+
+            <p className="text-center text-sm text-muted-foreground">
+              Already have an account?{" "}
+              <Link to="/login" className="text-primary hover:underline">
+                Sign in here
+              </Link>
+            </p>
           </CardContent>
         </Card>
-
-        {/* Insights and Achievements */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* AI Insights */}
-          <Card className="wellness-card">
-            <CardHeader>
-              <CardTitle>AI Insights</CardTitle>
-              <CardDescription>
-                Personalized observations about your wellness journey
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {insights.map((insight, index) => (
-                  <div
-                    key={index}
-                    className="flex items-start space-x-3 p-3 rounded-lg bg-muted/50"
-                  >
-                    <insight.icon
-                      className={`h-5 w-5 mt-0.5 ${
-                        insight.status === "positive"
-                          ? "text-wellness-green"
-                          : "text-wellness-blue"
-                      }`}
-                    />
-                    <div>
-                      <h4 className="font-semibold text-sm">{insight.title}</h4>
-                      <p className="text-sm text-muted-foreground">
-                        {insight.description}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-6 p-4 bg-gradient-secondary rounded-lg">
-                <h4 className="font-semibold mb-2">Weekly Recommendation</h4>
-                <p className="text-sm text-muted-foreground">
-                  Your mood tends to be highest on Fridays. Try scheduling
-                  important conversations or activities on these days to
-                  maximize your positive energy.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Achievements */}
-          <Card className="wellness-card">
-            <CardHeader>
-              <CardTitle>Achievements</CardTitle>
-              <CardDescription>
-                Celebrate your wellness milestones
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {achievements.map((achievement, index) => (
-                  <div
-                    key={index}
-                    className={`flex items-center space-x-3 p-3 rounded-lg border ${
-                      achievement.earned
-                        ? "bg-wellness-green/10 border-wellness-green/20"
-                        : "bg-muted/50 border-border"
-                    }`}
-                  >
-                    <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        achievement.earned
-                          ? "bg-wellness-green text-white"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {achievement.earned ? "🏆" : "🔒"}
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-sm">
-                        {achievement.title}
-                      </h4>
-                      <p className="text-sm text-muted-foreground">
-                        {achievement.description}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-6">
-                <Button className="wellness-button-primary w-full">
-                  Share Progress
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </div>
   );
 };
 
-export default Progress;
+export default Signup;

@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Send, Loader2 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Message = {
   id: string;
@@ -17,19 +18,29 @@ type Message = {
   timestamp: Date;
 };
 
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY; // Your Groq API key
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 const GROQ_URL = import.meta.env.VITE_GROQ_URL;
 
 export default function Chat() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      content:
-        "Hello! I'm Ami, your AI wellness companion. I'm here to listen, support, and help you navigate your mental health journey. How are you feeling today?",
+  const { user } = useAuth();
+
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (!user?.id) return [{
+      id: crypto.randomUUID(),
+      content: "Hello! I'm Ami, your AI wellness companion. I'm here to listen, support, and help you navigate your mental health journey. How are you feeling today?",
       sender: "ai",
       timestamp: new Date(),
-    },
-  ]);
+    }];
+
+    const savedMessages = localStorage.getItem(`chat_messages_${user.id}`);
+    return savedMessages ? JSON.parse(savedMessages) : [{
+      id: crypto.randomUUID(),
+      content: "Hello! I'm Ami, your AI wellness companion. I'm here to listen, support, and help you navigate your mental health journey. How are you feeling today?",
+      sender: "ai",
+      timestamp: new Date(),
+    }];
+  });
+
   const [inputMessage, setInputMessage] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -48,14 +59,18 @@ export default function Chat() {
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    const timer = setTimeout(() => scrollToBottom(), 50);
+    if (user?.id) {
+      localStorage.setItem(`chat_messages_${user.id}`, JSON.stringify(messages));
+    }
+    return () => clearTimeout(timer);
+  }, [messages, user?.id]);
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
 
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       content: inputMessage,
       sender: "user",
       timestamp: new Date(),
@@ -78,10 +93,13 @@ export default function Chat() {
           messages: [
             {
               role: "system",
-              content:
-                "You are Ami, an empathetic AI companion for a mental wellness app. Only answer questions related to mental wellness, mindfulness, emotional support, and mood tracking.",
+              content: "You are Ami, an empathetic AI companion for a mental wellness app. Only answer questions related to mental wellness, mindfulness, emotional support, and mood tracking.",
             },
-            { role: "user", content: currentInput },
+            ...messages.slice(-20).map((msg) => ({
+              role: msg.sender === "user" ? "user" : "assistant",
+              content: msg.content,
+            })),
+            { role: "user", content: currentInput }
           ],
           temperature: 0.7,
           max_tokens: 512,
@@ -93,12 +111,10 @@ export default function Chat() {
       }
 
       const data = await resp.json();
-      const aiReply =
-        data?.choices?.[0]?.message?.content ||
-        "I'm not sure how to answer that.";
+      const aiReply = data?.choices?.[0]?.message?.content || "I'm not sure how to answer that.";
 
       const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: crypto.randomUUID(),
         content: aiReply,
         sender: "ai",
         timestamp: new Date(),
@@ -108,7 +124,7 @@ export default function Chat() {
     } catch (error) {
       console.error("Error calling Groq API:", error);
       const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: crypto.randomUUID(),
         content: "Sorry, I couldn't connect to the AI service.",
         sender: "ai",
         timestamp: new Date(),
@@ -127,6 +143,7 @@ export default function Chat() {
 
   const handleQuickReply = (reply: string) => {
     setInputMessage(reply);
+    handleSendMessage();
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -145,7 +162,6 @@ export default function Chat() {
       <Header />
 
       <div className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
         <div className="mb-6">
           <h1 className="text-3xl md:text-4xl font-bold mb-2">
             <span className="text-gradient">AI Wellness Companion</span>
@@ -165,14 +181,11 @@ export default function Chat() {
             </CardTitle>
           </CardHeader>
 
-          {/* Messages Area */}
           <CardContent className="flex-1 overflow-y-auto p-6 space-y-5 bg-gray-50">
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={`flex items-start ${
-                  message.sender === "user" ? "justify-end" : "justify-start"
-                }`}
+                className={`flex items-start ${message.sender === "user" ? "justify-end" : "justify-start"}`}
               >
                 {message.sender === "ai" && (
                   <Avatar className="flex-shrink-0">
@@ -189,14 +202,8 @@ export default function Chat() {
                   )}
                 >
                   {message.content}
-                  <p
-                    className={`text-xs mt-1 ${
-                      message.sender === "user"
-                        ? "text-white/70"
-                        : "text-gray-600"
-                    }`}
-                  >
-                    {formatTime(message.timestamp)}
+                  <p className={`text-xs mt-1 ${message.sender === "user" ? "text-white/70" : "text-gray-600"}`}>
+                    {formatTime(new Date(message.timestamp))}
                   </p>
                 </div>
                 {message.sender === "user" && (
@@ -223,9 +230,8 @@ export default function Chat() {
             <div ref={messagesEndRef} />
           </CardContent>
 
-          {/* Quick Replies */}
           <div className="px-6 py-4  border-t border-border bg-gray-50">
-            <div className="flex flex-wrap gap-3 ">
+            <div className="flex flex-wrap gap-3">
               {quickReplies.map((reply, index) => (
                 <Button
                   key={index}
@@ -240,7 +246,6 @@ export default function Chat() {
             </div>
           </div>
 
-          {/* Input Area */}
           <div className="p-6 border-t border-border flex items-center gap-3 bg-white">
             <Input
               value={inputMessage}
