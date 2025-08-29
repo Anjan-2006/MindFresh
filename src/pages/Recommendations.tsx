@@ -15,6 +15,7 @@ interface Track {
     name: string;
   };
   genre?: string;
+  duration: number;
 }
 
 interface YouTubeVideo {
@@ -52,8 +53,8 @@ const Recommendations = () => {
   const [videos, setVideos] = useState<YouTubeVideo[]>([]);
   const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentTrack, setCurrentTrack] = useState<string | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [playingTracks, setPlayingTracks] = useState<Set<string>>(new Set());
+  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -102,12 +103,14 @@ const Recommendations = () => {
   const fetchAudiusTracks = async (query: string) => {
     try {
       const response = await fetch(
-        `https://discoveryprovider.audius.co/v1/tracks/search?query=${encodeURIComponent(query)}&limit=6&app_name=mindfresh`
+        `https://discoveryprovider.audius.co/v1/tracks/search?query=${encodeURIComponent(query)}&limit=20&app_name=mindfresh`
       );
       
       if (response.ok) {
         const data = await response.json();
-        setTracks(data.data || []);
+        // Filter out short tracks (< 30 seconds) to get full songs only
+        const fullTracks = (data.data || []).filter((track: Track) => track.duration > 30);
+        setTracks(fullTracks.slice(0, 6)); // Take first 6 full tracks
       }
     } catch (error) {
       console.error('Failed to fetch Audius tracks:', error);
@@ -174,13 +177,21 @@ const Recommendations = () => {
   };
 
   const playTrack = (trackId: string) => {
-    if (currentTrack === trackId && isPlaying) {
-      setIsPlaying(false);
-      setCurrentTrack(null);
-    } else {
-      setCurrentTrack(trackId);
-      setIsPlaying(true);
-    }
+    setPlayingTracks(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(trackId)) {
+        newSet.delete(trackId);
+      } else {
+        newSet.add(trackId);
+      }
+      return newSet;
+    });
+  };
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const getMoodDescription = (mood: number) => {
@@ -246,40 +257,46 @@ const Recommendations = () => {
             Music for Your Mood
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {tracks.map((track) => (
+            {tracks.length === 0 && !loading ? (
+              <p className="text-muted-foreground col-span-full text-center py-8">No music recommendations found. Try refreshing or check your connection.</p>
+            ) : (
+              tracks.map((track) => (
               <Card key={track.id} className="wellness-card">
                 <CardContent className="p-4">
                   <h3 className="font-semibold truncate mb-2">{track.title}</h3>
-                  <p className="text-sm text-muted-foreground mb-4">by {track.user.name}</p>
+                  <p className="text-sm text-muted-foreground mb-2">by {track.user.name}</p>
+                  <p className="text-xs text-muted-foreground mb-4">Duration: {formatDuration(track.duration)}</p>
                   
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-2 mb-3">
                     <Button
                       size="sm"
                       onClick={() => playTrack(track.id)}
                       className="wellness-button-primary"
                     >
-                      {currentTrack === track.id && isPlaying ? (
+                      {playingTracks.has(track.id) ? (
                         <Pause className="h-4 w-4 mr-2" />
                       ) : (
                         <Play className="h-4 w-4 mr-2" />
                       )}
-                      {currentTrack === track.id && isPlaying ? 'Pause' : 'Play'}
+                      {playingTracks.has(track.id) ? 'Pause' : 'Play'}
                     </Button>
                   </div>
                   
-                  {currentTrack === track.id && (
-                    <audio
-                      controls
-                      autoPlay={isPlaying}
-                      className="w-full mt-3"
-                      src={`https://discoveryprovider.audius.co/v1/tracks/${track.id}/stream?app_name=mindfresh`}
-                      onPause={() => setIsPlaying(false)}
-                      onPlay={() => setIsPlaying(true)}
-                    />
-                  )}
+                  <audio
+                    controls
+                    className="w-full"
+                    src={`https://discoveryprovider.audius.co/v1/tracks/${track.id}/stream?app_name=mindfresh`}
+                    onPlay={() => setPlayingTracks(prev => new Set(prev).add(track.id))}
+                    onPause={() => setPlayingTracks(prev => {
+                      const newSet = new Set(prev);
+                      newSet.delete(track.id);
+                      return newSet;
+                    })}
+                  />
                 </CardContent>
               </Card>
-            ))}
+              ))
+            )}
           </div>
         </section>
 
@@ -320,7 +337,7 @@ const Recommendations = () => {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {books.map((book) => (
-              <Card key={book.id} className="wellness-card">
+              <Card key={book.id} className="wellness-card cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setSelectedBook(book)}>
                 <CardContent className="p-4">
                   <div className="flex space-x-4">
                     {book.volumeInfo.imageLinks?.thumbnail && (
@@ -345,12 +362,53 @@ const Recommendations = () => {
                       {book.volumeInfo.description}
                     </p>
                   )}
+                  <p className="text-xs text-primary mt-2">Click to read more</p>
                 </CardContent>
               </Card>
             ))}
           </div>
         </section>
       </div>
+
+      {/* Book Detail Modal */}
+      {selectedBook && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setSelectedBook(null)}>
+          <div className="bg-background rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <h2 className="text-2xl font-bold">{selectedBook.volumeInfo.title}</h2>
+                <Button variant="outline" size="sm" onClick={() => setSelectedBook(null)}>✕</Button>
+              </div>
+              
+              <div className="flex space-x-6 mb-6">
+                {selectedBook.volumeInfo.imageLinks?.thumbnail && (
+                  <img 
+                    src={selectedBook.volumeInfo.imageLinks.thumbnail} 
+                    alt={selectedBook.volumeInfo.title}
+                    className="w-32 h-48 object-cover rounded"
+                  />
+                )}
+                <div className="flex-1">
+                  <p className="text-lg text-muted-foreground mb-2">
+                    {selectedBook.volumeInfo.authors?.join(', ')}
+                  </p>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Published: {selectedBook.volumeInfo.publishedDate}
+                  </p>
+                  {selectedBook.volumeInfo.description && (
+                    <div>
+                      <h3 className="font-semibold mb-2">Description</h3>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {selectedBook.volumeInfo.description}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
