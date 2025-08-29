@@ -133,52 +133,59 @@ const Recommendations = () => {
   };
 
   const fetchYouTubeVideos = async (query: string) => {
-    try {
-      const response = await supabase.functions.invoke("youtube-search", {
-        body: JSON.stringify({ query }), // make sure body is stringified
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`, // pass anon key
-        },
+  try {
+    const response = await supabase.functions.invoke("youtube-search", {
+      body: JSON.stringify({ query }),
+      headers: { "Content-Type": "application/json" }, // public call
+    });
+
+    if (!response.data) throw new Error("No data returned");
+    setVideos(response.data.items || []);
+  } catch (error) {
+    console.error("Failed to fetch YouTube videos:", error);
+    toast({
+      title: "Error",
+      description: "Failed to load podcast recommendations",
+      variant: "destructive",
+    });
+  }
+};
+
+// Google Books
+const fetchBooks = async (query: string) => {
+  try {
+    const response = await fetch(
+      `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(
+        query
+      )}&maxResults=6`
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      const items = data.items || [];
+
+      // Fix mixed content
+      const fixedItems = items.map((book: Book) => {
+        if (book.volumeInfo.imageLinks?.thumbnail) {
+          book.volumeInfo.imageLinks.thumbnail = book.volumeInfo.imageLinks.thumbnail.replace(
+            /^http:\/\//i,
+            "https://"
+          );
+        }
+        return book;
       });
 
-      // Supabase edge function returns data in `response.data`
-      if (!response.data) throw new Error("No data returned");
-
-      const { items } = response.data;
-
-      if (items) setVideos(items);
-    } catch (error) {
-      console.error("Failed to fetch YouTube videos:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load podcast recommendations",
-        variant: "destructive",
-      });
+      setBooks(fixedItems);
     }
-  };
-
-  const fetchBooks = async (query: string) => {
-    try {
-      const response = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(
-          query
-        )}&maxResults=6`
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setBooks(data.items || []);
-      }
-    } catch (error) {
-      console.error("Failed to fetch books:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load book recommendations",
-        variant: "destructive",
-      });
-    }
-  };
+  } catch (error) {
+    console.error("Failed to fetch books:", error);
+    toast({
+      title: "Error",
+      description: "Failed to load book recommendations",
+      variant: "destructive",
+    });
+  }
+};
 
   const loadRecommendations = async () => {
     setLoading(true);
